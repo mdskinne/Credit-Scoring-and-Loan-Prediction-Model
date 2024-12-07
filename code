@@ -1,0 +1,181 @@
+# %% Credit Scoring and Loan Dashboard
+from dash import Dash, dcc, html, Input, Output, State
+import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
+
+# Initialize Dash app
+app = Dash(__name__)
+
+# Dummy Model Coefficients for Credit Scoring
+model_coefficients = {
+    'intercept': 300,
+    'income': 0.002,
+    'debt_to_income_ratio': -50,
+    'credit_utilization': -70,
+    'payment_history': 200,
+    'credit_length': 5,
+    'mortgage_payment': -0.01
+}
+
+# Loan and Credit Card Limit Calculation Functions
+def calculate_credit_card_limit(credit_score):
+    if credit_score >= 750:
+        return 20000
+    elif 700 <= credit_score < 750:
+        return 15000
+    elif 650 <= credit_score < 700:
+        return 10000
+    elif 600 <= credit_score < 650:
+        return 5000
+    else:
+        return 1000
+
+def calculate_loan(credit_score, loan_type):
+    if loan_type == "car":
+        if credit_score >= 750:
+            return 50000, 3.5
+        elif 700 <= credit_score < 750:
+            return 40000, 4.5
+        elif 650 <= credit_score < 700:
+            return 30000, 6.0
+        elif 600 <= credit_score < 650:
+            return 20000, 8.0
+        else:
+            return 10000, 10.0
+    elif loan_type == "house":
+        if credit_score >= 750:
+            return 300000, 4.0
+        elif 700 <= credit_score < 750:
+            return 250000, 5.0
+        elif 650 <= credit_score < 700:
+            return 200000, 6.5
+        elif 600 <= credit_score < 650:
+            return 150000, 8.0
+        else:
+            return 100000, 10.0
+    elif loan_type == "personal":
+        if credit_score >= 750:
+            return 30000, 5.5
+        elif 700 <= credit_score < 750:
+            return 20000, 8.0
+        elif 650 <= credit_score < 700:
+            return 10000, 12.0
+        else:
+            return 5000, 18.0
+
+# Dash app layout
+app.layout = html.Div([
+    html.H1("Integrated Credit Scoring & Loan Dashboard", style={'textAlign': 'center', 'color': '#2c3e50'}),
+
+    # Credit Scoring Section
+    html.Div([
+        html.H2("Credit Scoring"),
+        html.Label("Yearly Income ($):"),
+        dcc.Input(id='income', type='number', placeholder="Enter your yearly income", style={'margin': '5px'}),
+        html.Label("Monthly Debt Payments ($):"),
+        dcc.Input(id='debt', type='number', placeholder="Enter total monthly debt payments", style={'margin': '5px'}),
+        html.Label("Monthly Credit Card Limit ($):"),
+        dcc.Input(id='credit_limit', type='number', placeholder="Enter total monthly credit limit", style={'margin': '5px'}),
+        html.Label("Monthly Credit Card Usage ($):"),
+        dcc.Input(id='credit_usage', type='number', placeholder="Enter total credit used this month", style={'margin': '5px'}),
+        html.Label("Payment History (0-1):"),
+        html.Div("This metric reflects your reliability in making payments on time. "
+                 "A score of 1 indicates perfect payment history.",
+                 style={'fontSize': '12px', 'color': '#7f8c8d', 'marginBottom': '5px'}),
+        dcc.Input(id='payment_history', type='number', placeholder="Enter payment history score (0-1)", style={'margin': '5px'}),
+        html.Label("Credit Length (years):"),
+        dcc.Input(id='credit_length', type='number', placeholder="Enter years of credit history", style={'margin': '5px'}),
+        html.Label("Monthly Mortgage Payment ($):"),
+        dcc.Input(id='mortgage_payment', type='number', placeholder="Enter monthly mortgage payment", style={'margin': '5px'}),
+        html.Button("Predict Credit Score", id='predict-button', n_clicks=0, style={
+            'marginTop': '10px', 'backgroundColor': '#3498db', 'color': 'white', 'padding': '10px', 'borderRadius': '5px'
+        }),
+        html.Div(id='prediction-output', style={'textAlign': 'center', 'marginTop': '20px', 'color': '#34495e'}),
+        dcc.Graph(id='credit-score-gauge', style={'marginTop': '20px'}),
+    ], style={'padding': '20px', 'border': '1px solid #dcdcdc', 'borderRadius': '10px', 'margin': '10px', 'backgroundColor': '#f7f7f7'}),
+
+    # Loan Acceptance Section
+    html.Div([
+        html.H2("Loan Acceptance Rate"),
+        html.Div(id='loan-acceptance-output', style={'fontSize': '30px', 'textAlign': 'center', 'marginTop': '20px'}),
+    ], style={'padding': '20px', 'border': '1px solid #dcdcdc', 'borderRadius': '10px', 'margin': '10px', 'backgroundColor': '#f7f7f7'}),
+
+    # Loan Eligibility Section
+    html.Div([
+        html.H2("Loan & Credit Card Eligibility"),
+        html.Div(id='loan-eligibility-output', style={'fontSize': '18px', 'textAlign': 'center', 'marginTop': '20px'}),
+    ], style={'padding': '20px', 'border': '1px solid #dcdcdc', 'borderRadius': '10px', 'margin': '10px', 'backgroundColor': '#f7f7f7'}),
+])
+
+# Callbacks for predictions and loan eligibility
+@app.callback(
+    [Output('prediction-output', 'children'),
+     Output('credit-score-gauge', 'figure'),
+     Output('loan-acceptance-output', 'children'),
+     Output('loan-eligibility-output', 'children')],
+    [Input('predict-button', 'n_clicks')],
+    [State('income', 'value'),
+     State('debt', 'value'),
+     State('credit_limit', 'value'),
+     State('credit_usage', 'value'),
+     State('payment_history', 'value'),
+     State('credit_length', 'value'),
+     State('mortgage_payment', 'value')]
+)
+def update_dashboard(n_clicks, income, debt, credit_limit, credit_usage, payment_history, credit_length, mortgage_payment):
+    if n_clicks > 0:
+        # Predict Credit Score
+        debt_to_income_ratio = debt / (income / 12)
+        credit_utilization = credit_usage / credit_limit
+        credit_score = (model_coefficients['intercept'] +
+                        model_coefficients['income'] * income +
+                        model_coefficients['debt_to_income_ratio'] * debt_to_income_ratio +
+                        model_coefficients['credit_utilization'] * credit_utilization +
+                        model_coefficients['payment_history'] * payment_history +
+                        model_coefficients['credit_length'] * credit_length +
+                        model_coefficients['mortgage_payment'] * mortgage_payment)
+        
+        # Credit Score Visualization
+        credit_score_fig = go.Figure(go.Indicator(
+            mode="gauge+number",
+            value=credit_score,
+            title={'text': "Predicted Credit Score"},
+            gauge={
+                'axis': {'range': [300, 850]},
+                'steps': [
+                    {'range': [300, 579], 'color': "#e74c3c"},
+                    {'range': [580, 669], 'color': "#e67e22"},
+                    {'range': [670, 739], 'color': "#f1c40f"},
+                    {'range': [740, 799], 'color': "#2ecc71"},
+                    {'range': [800, 850], 'color': "#27ae60"},
+                ],
+                'bar': {'color': "#34495e"}
+            }
+        ))
+
+        # Loan Acceptance Rate
+        acceptance_rate = np.clip(credit_score / 850 * 100, 0, 100)
+        loan_acceptance_output = f"Loan Acceptance Rate: {acceptance_rate:.2f}%"
+
+        # Loan and Credit Card Eligibility
+        credit_card_limit = calculate_credit_card_limit(credit_score)
+        car_loan, car_rate = calculate_loan(credit_score, "car")
+        house_loan, house_rate = calculate_loan(credit_score, "house")
+        personal_loan, personal_rate = calculate_loan(credit_score, "personal")
+
+        loan_output = html.Div([
+            html.P(f"Credit Card Limit: ${credit_card_limit}"),
+            html.P(f"Car Loan: ${car_loan} at {car_rate}% interest"),
+            html.P(f"House Loan: ${house_loan} at {house_rate}% interest"),
+            html.P(f"Personal Loan: ${personal_loan} at {personal_rate}% interest"),
+        ])
+
+        return f"Predicted Credit Score: {int(credit_score)}", credit_score_fig, loan_acceptance_output, loan_output
+
+    return "", go.Figure(), "", ""
+
+if __name__ == '__main__':
+    app.run_server(debug=True)
+'}
+)
